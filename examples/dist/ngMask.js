@@ -18,6 +18,37 @@
           var timeout;
           var promise;
 
+            function getCaretPosition(element) {
+                var caretPosition = 0;
+                if (document.selection) {
+                    element.focus();
+                    var sel = document.selection.createRange();
+                    sel.moveStart('character', -element.value.length);
+                    caretPosition = sel.text.length;
+                }
+                else if (element.selectionStart || element.selectionStart == '0') {
+                    caretPosition = element.selectionStart;
+                }
+                return caretPosition;
+            }
+
+            function setCaretPosition(element, caretPosition) {
+                if (element.createTextRange) {
+                    var range = element.createTextRange();
+                    range.move('character', caretPosition);
+                    range.select();
+                }
+                else {
+                    if (element.selectionStart) {
+                        element.focus();
+                        element.setSelectionRange(caretPosition, caretPosition);
+                    }
+                    else {
+                        element.focus();
+                    }
+                }
+            }
+
           function setSelectionRange(selectionStart){
             if (typeof selectionStart !== 'number') {
               return;
@@ -70,6 +101,7 @@
                 // get initial options
                 var timeout;
                 var options = maskService.getOptions();
+                  var deletedKeyPressed = false;
 
                 function parseViewValue(value) {
                   var untouchedValue = value;
@@ -138,8 +170,15 @@
 
                     // Update view and model values
                     if(value !== viewValueWithDivisors){
-                      controller.$setViewValue(angular.copy(viewValueWithDivisors), 'input');
+                        var currentPosition = getCaretPosition($element[0]);
+                      controller.$viewValue = angular.copy(viewValueWithDivisors);
                       controller.$render();
+                        if (!deletedKeyPressed) {
+                            currentPosition++;
+                        }
+                        setCaretPosition($element[0], currentPosition);
+                      // Not using $setViewValue so we don't clobber the model value and dirty the form
+                      // without any kind of user interaction.
                     }
                   } catch (e) {
                     $log.error('[mask - parseViewValue]');
@@ -156,7 +195,10 @@
 
                 controller.$parsers.push(parseViewValue);
 
-                $element.on('click input paste keyup', function() {
+                $element.on('click input paste keyup keydown', function (e) {
+                  if (e.keyCode) {
+                    deletedKeyPressed = e.keyCode == 46 || e.keyCode == 8;
+                  }
                   timeout = $timeout(function() {
                     // Manual debounce to prevent multiple execution
                     $timeout.cancel(timeout);
@@ -167,11 +209,9 @@
                 });
 
                 // Register the watch to observe remote loading or promised data
-                // Deregister calling returned function
-                var watcher = $scope.$watch($attrs.ngModel, function (newValue, oldValue) {
+                $scope.$watch($attrs.ngModel, function (newValue, oldValue) {
                   if (angular.isDefined(newValue)) {
                     parseViewValue(newValue);
-                    watcher();
                   }
                 });
 
@@ -180,8 +220,10 @@
                 // but before the browser renders
                 if(options.value) {
                   $scope.$evalAsync(function($scope) {
-                    controller.$setViewValue(angular.copy(options.value), 'input');
+                    controller.$viewValue = angular.copy(options.value);
                     controller.$render();
+                    // Not using $setViewValue so we don't clobber the model value and dirty the form
+                    // without any kind of user interaction.
                   });
                 }
               });
